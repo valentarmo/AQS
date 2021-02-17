@@ -1,0 +1,38 @@
+{
+    "Comment": "A Hello World example of the Amazon States Language using Pass states",
+    "StartAt": "Load New Partitions Raw",
+    "States": {
+      "Load New Partitions Raw": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
+        "Parameters": {
+          "QueryString": "MSCK REPAIR TABLE airquality.valentarmo_air_quality_raw;",
+          "WorkGroup": "primary",
+          "ResultConfiguration": {
+            "OutputLocation": "s3://air-quality-athena-queries/"
+          }
+        },
+        "Next": "Start Glue Job"
+      },
+      "Start Glue Job": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::glue:startJobRun.sync",
+        "Parameters": {
+          "JobName": "AirQualityToColumnarFormatHourly"
+        },
+        "Next": "Load New Partitions Columnar"
+      },
+      "Load New Partitions Columnar": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
+        "Parameters": {
+          "QueryString": "MSCK REPAIR TABLE airquality.valentarmo_air_quality_columnar;",
+          "WorkGroup": "primary",
+          "ResultConfiguration": {
+            "OutputLocation": "s3://air-quality-athena-queries/"
+          }
+        },
+        "End": true
+      }
+    }
+  }
