@@ -1,0 +1,69 @@
+Description: Create Step Function
+Parameters:
+  Role:
+    Description: ARN of the IAM Role for the machine
+    Type: String
+  Name:
+    Description: State Machine name
+    Type: String
+  GlueJobName:
+    Description: Name of the glue job
+    Type: String
+  CatalogDBName:
+    Description: Name of the glue catalog database
+    Type: String
+  CatalogRawTableName:
+    Description: Name of the glue catalog table for raw data
+    Type: String
+  CatalogProcessedTableName:
+    Description: Name of the glue catalog table for processed data
+    Type: String
+  OutputLocation:
+    Description: S3 path to store output
+    Type: String
+Resources:
+  ETLStepFunction:
+    Type: 'AWS::StepFunctions::StateMachine'
+    Properties:
+      RoleArn: !Ref Role
+      StateMachineName: !Ref Name
+      DefinitionString:
+        !Join
+          - ' '
+          - - '{'
+            - '"StartAt": "Load New Partitions Raw",'
+            - '"States": {'
+            - '"Load New Partitions Raw": {'
+            - '"Type": "Task",'
+            - '"Resource": "arn:aws:states:::athena:startQueryExecution.sync",'
+            - '"Parameters": {'
+            - !Join ['', ['"QueryString": "MSCK REPAIR TABLE ', !Ref CatalogDBName, '.', !Ref CatalogRawTableName, ';",']]
+            - '"WorkGroup": "primary",'
+            - '"ResultConfiguration": {'
+            - !Join ['', ['"OutputLocation": "', !Ref OutputLocation, '"']]
+            - '}'
+            - '},'
+            - '"Next": "Start Glue Job"'
+            - '},'
+            - '"Start Glue Job": {'
+            - '"Type": "Task",'
+            - '"Resource": "arn:aws:states:::glue:startJobRun.sync",'
+            - '"Parameters": {'
+            - !Join ['', ['"JobName": "', !Ref GlueJobName, '"']]
+            - '},'
+            - '"Next": "Load New Partitions Columnar"'
+            - '},'
+            - '"Load New Partitions Columnar": {'
+            - '"Type": "Task",'
+            - '"Resource": "arn:aws:states:::athena:startQueryExecution.sync",'
+            - '"Parameters": {'
+            - !Join ['', ['"QueryString": "MSCK REPAIR TABLE ', !Ref CatalogDBName, '.', !Ref CatalogProcessedTableName, ';",']]
+            - '"WorkGroup": "primary",'
+            - '"ResultConfiguration": {'
+            - !Join ['', ['"OutputLocation": "', !Ref OutputLocation, '"']]
+            - '}'
+            - '},'
+            - '"End": true'
+            - '}'
+            - '}'
+            - '}'

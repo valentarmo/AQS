@@ -1,0 +1,25 @@
+Description: Create a Firehose Delivery Stream that writes to S3
+Parameters:
+  Name:
+    Description: Delivery Stream Name
+    Type: String
+  S3Bucket:
+    Description: ARN of the Target S3 Bucket
+    Type: String
+  Role:
+    Description: ARN of the Role to use
+    Type: String
+Resources:
+  FirehoseDeliveryStream:
+    Type: 'AWS::KinesisFirehose::DeliveryStream'
+    Properties:
+      DeliveryStreamName: !Ref Name
+      DeliveryStreamType: DirectPut
+      S3DestinationConfiguration:
+        BucketARN: !Ref S3Bucket
+        ErrorOutputPrefix: error=!{firehose:error-output-type}/!{timestamp:yyyy/MM/dd}
+        Prefix: year=!{timestamp:YYYY}/month=!{timestamp:M}/day=!{timestamp:d}/hour=!{timestamp:H}/
+        RoleARN: !Ref Role
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 1

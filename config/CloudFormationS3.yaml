@@ -1,6 +1,6 @@
 Description: Create S3 Buckets
 Parameters:
-  Prefix:
+  Prefix  :
     Description: Bucket names prefix
     Type: String
 Resources:
