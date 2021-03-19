@@ -1,0 +1,351 @@
+Description: >
+  Create a Data Lake with an automated ETL consisting of:
+      Three S3 Buckets,
+      A Glue Database,
+      Two Glue Crawlers,
+      A Glue Job,
+      A Firehose Delivery Stream,
+      A StepFunction,
+      A CloudWatch Event,
+      IAM Roles
+Parameters:
+  Prefix:
+    Description: A word to prefix names with
+    Type: String
+Resources:
+  S3Raw:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: !Join ["-", [!Ref Prefix, air-quality-raw]]
+  S3Processed:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: !Join ["-", [!Ref Prefix, air-quality-processed]]
+  S3Athena:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: !Join ["-", [!Ref Prefix, air-quality-athena-output]]
+  S3Scripts:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: !Join ["-", [!Ref Prefix, air-quality-etl-scripts]]
+  GlueRawBucketCrawler:
+    Type: "AWS::Glue::Crawler"
+    Properties:
+      DatabaseName: !Ref GlueDatabase
+      Name: !Join ["", [!Ref Prefix, AirQualityRawCrawler]]
+      Role: !GetAtt GlueRole.Arn
+      Targets:
+        S3Targets:
+          - Path: !Ref S3Raw
+  GlueProcessedBucketCrawler:
+    Type: "AWS::Glue::Crawler"
+    Properties:
+      DatabaseName: !Ref GlueDatabase
+      Name: !Join ["", [!Ref Prefix, AirQualityProcessedCrawler]]
+      Role: !GetAtt GlueRole.Arn
+      Targets:
+        S3Targets:
+          - Path: !Ref S3Processed
+  GlueDatabase:
+    Type: "AWS::Glue::Database"
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: !Join ["", [!Ref Prefix, AirQualityGlueDatabase]]
+        Description: GlueCatalogDatabase
+  GlueJob:
+    Type: "AWS::Glue::Job"
+    Properties:
+      Command:
+        Name: glueetl
+        PythonVersion: '3'
+        ScriptLocation: 's3://TODO'
+      Name: !Join ["", [!Ref Prefix, AirQualityTransformToParquet]]
+      Role: !GetAtt GlueRole.Arn
+      Description: ETL
+      GlueVersion: "2.0"
+      MaxRetries: 0
+  AthenaWorkGroup:
+    Type: "AWS::Athena::WorkGroup"
+    Properties:
+      Name: !Join ["", [!Ref Prefix, AirQualityWorkGroup]]
+      State: ENABLED
+      WorkGroupConfiguration:
+        ResultConfiguration:
+          OutputLocation: !Ref S3Athena
+  FirehoseDeliveryStream:
+    Type: "AWS::KinesisFirehose::DeliveryStream"
+    Properties:
+      DeliveryStreamName: !Join ["", [!Ref Prefix, AirQualityDeliveryStream]]
+      DeliveryStreamType: DirectPut
+      S3DestinationConfiguration:
+        BucketARN: !GetAtt S3Raw.Arn
+        ErrorOutputPrefix: error=!{firehose:error-output-type}/!{timestamp:yyyy/MM/dd}
+        Prefix: year=!{timestamp:YYYY}/month=!{timestamp:M}/day=!{timestamp:d}/hour=!{timestamp:H}/
+        RoleARN: !GetAtt FirehoseRole.Arn
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 1
+  StepFunction:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      RoleArn: !GetAtt StepFunctionRole.Arn
+      StateMachineName: !Ref !Join ["", [!Ref Prefix, AirQualityETLStateMachine]]
+      DefinitionString:
+        !Join
+          - ' '
+          - - '{'
+            - '"StartAt": "Load New Partitions Raw",'
+            - '"States": {'
+            - '"Load New Partitions Raw": {'
+            - '"Type": "Task",'
+            - '"Resource": "arn:aws:states:::athena:startQueryExecution.sync",'
+            - '"Parameters": {'
+            - !Join ['', ['"QueryString": "MSCK REPAIR TABLE ', !Ref GlueDatabase, '.', !Join ["_", [!Ref Prefix, air_quality_processed]], ';",']]
+            - '"WorkGroup": "primary",'
+            - '"ResultConfiguration": {'
+            - !Join ['', ['"OutputLocation": "', !Ref S3Athena, '"']]
+            - '}'
+            - '},'
+            - '"Next": "Start Glue Job"'
+            - '},'
+            - '"Start Glue Job": {'
+            - '"Type": "Task",'
+            - '"Resource": "arn:aws:states:::glue:startJobRun.sync",'
+            - '"Parameters": {'
+            - !Join ['', ['"JobName": "', !Ref GlueJob, '"']]
+            - '},'
+            - '"Next": "Load New Partitions Columnar"'
+            - '},'
+            - '"Load New Partitions Columnar": {'
+            - '"Type": "Task",'
+            - '"Resource": "arn:aws:states:::athena:startQueryExecution.sync",'
+            - '"Parameters": {'
+            - !Join ['', ['"QueryString": "MSCK REPAIR TABLE ', !Ref GlueDatabase, '.', !Join ["_", [!Ref Prefix, air_quality_raw]], ';",']]
+            - '"WorkGroup": "primary",'
+            - '"ResultConfiguration": {'
+            - !Join ['', ['"OutputLocation": "', !Ref S3Athena, '"']]
+            - '}'
+            - '},'
+            - '"End": true'
+            - '}'
+            - '}'
+            - '}'
+  CloudWatchEvent:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Description: Run the ETL step function every hour
+      Name: !Join ["", [!Ref Prefix, AirQualityHourlyEventRule]]
+      RoleArn: !GetAtt EventsRole
+      ScheduleExpression: cron(0 0/1 ? * * *)
+      State: DISABLED
+      Targets:
+        - Arn: !GetAtt StepFunction.Arn
+          Id: !Join ["", [!Ref Prefix, AirQualityETLStepFunction]]
+        RetryPolicy:
+          MaximumRetryAttempts: 1
+          MaximumEventAgeInSeconds: 600
+  GlueRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Path: "/"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - glue.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+  FirehoseRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Path: "/"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - firehose.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+  StepFunctionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Path: "/"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - states.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+  EventsRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Path: "/"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - events.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+  GlueRolePolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: !Join ["", [!Ref Prefix, GlueRolePolicy]]
+      Roles: [!Ref GlueRole]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "s3:PutObject"
+              - "s3:GetObject"
+              - "s3:ListAllMyBuckets"
+              - "s3:CreateBucket"
+              - "s3:ListBucket"
+              - "s3:DeleteObject"
+              - "s3:DeleteBucket"
+              - "s3:GetBucketLocation"
+              - "s3:GetBucketAcl"
+            Resource: 
+              - !GetAtt S3Raw.Arn
+              - !GetAtt S3Processed.Arn
+          - Effect: Allow
+            Action:
+              - "glue:*"
+              - "ec2:DescribeVpcEndpoints"
+              - "ec2:DescribeRouteTables"
+              - "ec2:CreateNetworkInterface"
+              - "ec2:DeleteNetworkInterfaces"
+              - "ec2:DescribeNetworkInterfaces"
+              - "ec2:DescribeSecurityGroups"
+              - "ec2:DescribeSubnets"
+              - "ec2:DescribeVpcAttribute"
+              - "iam:ListRolePolicies"
+              - "iam:GetRole"
+              - "iam:GetRolePolicy"
+              - "cloudwatch:PutMetricData"
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+            Resource: "arn:aws:logs:*:*:/aws-glue/*"
+          - Effect: Allow
+            Action:
+              - "ec2:CreateTags"
+              - "ec2:DeleteTags"
+            Resource:
+              - "arn:aws:ec2:*:*:network-interface/*"
+              - "arn:aws:ec2:*:*:security-group/*"
+              - "arn:aws:ec2:*:*:instance/*"
+  FirehoseRolePolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: !Join ["", [!Ref Prefix, FirehoseRolePolicy]]
+      Roles: [!Ref FirehoseRole]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "s3:AbortMultipartUpload"
+              - "s3:GetBucketLocation"
+              - "s3:GetObject"
+              - "s3:ListBucket"
+              - "s3:ListBucketMultipartUploads"
+              - "s3:PutObject"
+            Resource: !GetAtt S3Raw.Arn
+          - Effect: Allow
+            Action:
+              - "logs:PutLogEvents"
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - "Kinesis:DescribeStream"
+              - "Kinesis:GetShardIterator"
+              - "Kinesis:GetRecords"
+              - "Kinesis:ListShards"
+            Resource: "*"
+  StepFunctionRolePolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: !Join ["", [!Ref Prefix, StepFunctionRolePolicy]]
+      Roles: [!Ref StepFunctionRole]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "glue:StartJobRun"
+              - "glue:GetJobRun"
+              - "glue:GetJobRuns"
+              - "glue:BatchStopJobRun"
+            Resource: !GetAtt GlueJob.Arn
+          - Effect: Allow
+            Action:
+              - "athena:startQueryExecution"
+              - "athena:stopQueryExecution"
+              - "athena:getQueryExecution"
+              - "athena:getDataCatalog"
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - "s3:GetBucketLocation"
+              - "s3:GetObject"
+              - "s3:ListBucket"
+              - "s3:ListBucketMultipartUploads"
+              - "s3:ListMultipartUploadParts"
+              - "s3:AbortMultipartUpload"
+              - "s3:CreateBucket"
+              - "s3:PutObject"
+            Resource: 
+              - !GetAtt S3Processed.Arn
+              - !GetAtt S3Athena.Arn
+          - Effect: Allow
+            Action:
+              - "glue:CreateDatabase"
+              - "glue:GetDatabase"
+              - "glue:GetDatabases"
+              - "glue:UpdateDatabase"
+              - "glue:DeleteDatabase"
+              - "glue:CreateTable"
+              - "glue:UpdateTable"
+              - "glue:GetTable"
+              - "glue:GetTables"
+              - "glue:DeleteTable"
+              - "glue:BatchDeleteTable"
+              - "glue:BatchCreatePartition"
+              - "glue:CreatePartition"
+              - "glue:GetPartitions"
+              - "glue:BatchGetPartition"
+              - "glue:DeletePartition"
+              - "glue:BatchDeletePartition"
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - "lakeformation:GetDataAccess"
+            Resource: "*"
+  EventsRolePolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: !Join ["", [!Ref Prefix, EventsRolePolicy]]
+      Roles: [!Ref EventsRole]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "states:StartExecution"
+            Resource: !GetAtt StepFunction.Arn
