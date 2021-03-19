@@ -10,8 +10,10 @@ Description: >
       IAM Roles
 Parameters:
   Prefix:
-    Description: A word to prefix names with
+    Description: A word to prefix names with. Aimed to make bucket names unique.
     Type: String
+    AllowedPattern: "[a-z]+"
+    ConstraintDescription: Malformed input-parameter. Prefix must match the pattern [a-z]+
 Resources:
   S3Raw:
     Type: "AWS::S3::Bucket"
@@ -52,7 +54,7 @@ Resources:
     Properties:
       CatalogId: !Ref AWS::AccountId
       DatabaseInput:
-        Name: !Join ["", [!Ref Prefix, AirQualityGlueDatabase]]
+        Name: !Join ["-", [!Ref Prefix, air-quality]]
         Description: GlueCatalogDatabase
   GlueJob:
     Type: "AWS::Glue::Job"
@@ -73,7 +75,7 @@ Resources:
       State: ENABLED
       WorkGroupConfiguration:
         ResultConfiguration:
-          OutputLocation: !Ref S3Athena
+          OutputLocation: !Join ["", [s3://, !Ref S3Athena]]
   FirehoseDeliveryStream:
     Type: "AWS::KinesisFirehose::DeliveryStream"
     Properties:
@@ -91,7 +93,7 @@ Resources:
     Type: "AWS::StepFunctions::StateMachine"
     Properties:
       RoleArn: !GetAtt StepFunctionRole.Arn
-      StateMachineName: !Ref !Join ["", [!Ref Prefix, AirQualityETLStateMachine]]
+      StateMachineName: !Join ["", [!Ref Prefix, AirQualityETLStateMachine]]
       DefinitionString:
         !Join
           - ' '
@@ -105,7 +107,7 @@ Resources:
             - !Join ['', ['"QueryString": "MSCK REPAIR TABLE ', !Ref GlueDatabase, '.', !Join ["_", [!Ref Prefix, air_quality_processed]], ';",']]
             - '"WorkGroup": "primary",'
             - '"ResultConfiguration": {'
-            - !Join ['', ['"OutputLocation": "', !Ref S3Athena, '"']]
+            - !Join ['', ['"OutputLocation": "', !Join ["", [s3://, !Ref S3Athena]], '"']]
             - '}'
             - '},'
             - '"Next": "Start Glue Job"'
@@ -125,7 +127,7 @@ Resources:
             - !Join ['', ['"QueryString": "MSCK REPAIR TABLE ', !Ref GlueDatabase, '.', !Join ["_", [!Ref Prefix, air_quality_raw]], ';",']]
             - '"WorkGroup": "primary",'
             - '"ResultConfiguration": {'
-            - !Join ['', ['"OutputLocation": "', !Ref S3Athena, '"']]
+            - !Join ['', ['"OutputLocation": "', !Join ["", [s3://, !Ref S3Athena]], '"']]
             - '}'
             - '},'
             - '"End": true'
@@ -137,15 +139,16 @@ Resources:
     Properties:
       Description: Run the ETL step function every hour
       Name: !Join ["", [!Ref Prefix, AirQualityHourlyEventRule]]
-      RoleArn: !GetAtt EventsRole
+      RoleArn: !GetAtt EventsRole.Arn
       ScheduleExpression: cron(0 0/1 ? * * *)
       State: DISABLED
       Targets:
         - Arn: !GetAtt StepFunction.Arn
           Id: !Join ["", [!Ref Prefix, AirQualityETLStepFunction]]
-        RetryPolicy:
-          MaximumRetryAttempts: 1
-          MaximumEventAgeInSeconds: 600
+          RoleArn: !GetAtt EventsRole.Arn
+          RetryPolicy:
+            MaximumRetryAttempts: 1
+            MaximumEventAgeInSeconds: 600
   GlueRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -292,7 +295,7 @@ Resources:
               - "glue:GetJobRun"
               - "glue:GetJobRuns"
               - "glue:BatchStopJobRun"
-            Resource: !GetAtt GlueJob.Arn
+            Resource: "*"
           - Effect: Allow
             Action:
               - "athena:startQueryExecution"

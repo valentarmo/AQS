@@ -8,7 +8,7 @@
           "QueryString": "MSCK REPAIR TABLE <DATABASE_NAME>.<RAW_DATA_TABLE_NAME>;",
           "WorkGroup": "primary",
           "ResultConfiguration": {
-            "OutputLocation": "s3://air-quality-athena-queries/"
+            "OutputLocation": "<S3 PATH>"
           }
         },
         "Next": "Start Glue Job"
@@ -28,7 +28,7 @@
           "QueryString": "MSCK REPAIR TABLE <DATABASE_NAME>.<RAW_DATA_TABLE_NAME>;",
           "WorkGroup": "primary",
           "ResultConfiguration": {
-            "OutputLocation": "s3://air-quality-athena-queries/"
+            "OutputLocation": "<S3 PATH>"
           }
         },
         "End": true
