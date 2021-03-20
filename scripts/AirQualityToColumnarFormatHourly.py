@@ -7,10 +7,14 @@ from awsglue.context import GlueContext
 from awsglue.job import Job
 
 ## @params: [JOB_NAME]
-args = getResolvedOptions(sys.argv, ['JOB_NAME'])
+args = getResolvedOptions(sys.argv, ['JOB_NAME',
+                                     'source_database'
+                                     'source_table_name',
+                                     'data_target'])
 
-SOURCE = "<FILL_TABLE_NAME>"
-TARGET = "<FILL_S3_PATH>"
+DATABASE = args['source_database']
+SOURCE_TABLE = args['source_table_name']
+TARGET = args['data_target']
 
 sc = SparkContext()
 glueContext = GlueContext(sc)
@@ -24,13 +28,13 @@ filter_date = current_date - datetime.timedelta(hours = 1)
 _year, _month, _day, _hour = filter_date.year, filter_date.month, filter_date.day, filter_date.hour
 
 ## @type: DataSource
-## @args: [database = "air-quality", push_down_predicate = "(year == '{_year}' and  month == '{_month}' and day == '{_day}' and hour == '{_hour}')", table_name = SOURCE, transformation_ctx = "DataSource0"]
+## @args: [database = DATABASE, push_down_predicate = "(year == '{_year}' and  month == '{_month}' and day == '{_day}' and hour == '{_hour}')", table_name = SOURCE_TABLE, transformation_ctx = "DataSource0"]
 ## @return: DataSource0
 ## @inputs: []
 DataSource0 = glueContext.create_dynamic_frame.from_catalog(
-    database = "airquality",
+    database = DATABASE,
     push_down_predicate = f"(year == '{_year}' and  month == '{_month}' and day == '{_day}' and hour == '{_hour}')",
-    table_name = SOURCE,
+    table_name = SOURCE_TABLE,
     transformation_ctx = "DataSource0"
 )
 

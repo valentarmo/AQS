@@ -10,10 +10,11 @@ Description: >
       IAM Roles
 Parameters:
   Prefix:
-    Description: A word to prefix names with. Aimed to make bucket names unique.
+    Description: A word to prefix names with. Aimed mainly to make bucket names unique.
     Type: String
     AllowedPattern: "[a-z]+"
     ConstraintDescription: Malformed input-parameter. Prefix must match the pattern [a-z]+
+    Default: valentarmo
 Resources:
   S3Raw:
     Type: "AWS::S3::Bucket"
@@ -62,8 +63,12 @@ Resources:
       Command:
         Name: glueetl
         PythonVersion: '3'
-        ScriptLocation: 's3://TODO'
+        ScriptLocation: !Join ["", [s3://, !Ref S3Scripts, /AirQualityToColumnarFormatHourly.py]]
       Name: !Join ["", [!Ref Prefix, AirQualityTransformToParquet]]
+      DefaultArguments:
+        "--source_database": !Ref GlueDatabase
+        "--source_table_name": !Join ["_", [!Ref Prefix, air_quality_processed]]
+        "--data_target": !Join ["", [s3://, !Ref S3Processed, /]]
       Role: !GetAtt GlueRole.Arn
       Description: ETL
       GlueVersion: "2.0"
@@ -89,6 +94,13 @@ Resources:
         BufferingHints:
           IntervalInSeconds: 60
           SizeInMBs: 1
+  DeliveryStreamSSMParameter:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Description: Firehose Delivery Stream Name 
+      Name: AQSDeliveryStreamName
+      Type: String
+      Value: !Join ["", [!Ref Prefix, AirQualityDeliveryStream]]
   StepFunction:
     Type: "AWS::StepFunctions::StateMachine"
     Properties:
@@ -352,3 +364,7 @@ Resources:
             Action:
               - "states:StartExecution"
             Resource: !GetAtt StepFunction.Arn
+Outputs:
+  ScriptsBucketName:
+    Description: Scripts Bucket Name
+    Value: !Ref S3Scripts

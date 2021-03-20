@@ -1,0 +1,7 @@
+project:
+  name: data-lake
+  regions:
+    - us-east-2
+  tests: 
+    creation-test:
+      template: ../templates/DataLake.yaml
