@@ -1,10 +1,6 @@
 - hosts: Jenkins
   remote_user: ec2-user
   become: yes
-  environment:
-    JAVA_OPTS: '-Djenkins.install.runSetupWizard=false'
-    JAVA_ARGS: '-Djenkins.install.runSetupWizard=false'
-    JENKINS_JAVA_OPTS: '-Djenkins.install.runSetupWizard=false'
 
   tasks:
     - name: Update Packages
@@ -22,12 +18,12 @@
         state: present
         key: https://pkg.jenkins.io/redhat-stable/jenkins.io.key
 
-    - name: Install Jenkins
+    - name: Install Jenkins and Git
       yum:
         name:
           - jenkins
           - java-1.8.0-openjdk-devel
-        state: present
+          - git
 
     - name: Start Jenkins as a Service
       systemd:

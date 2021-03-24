@@ -3,13 +3,14 @@
 import argparse
 import boto3
 import time
+import yaml
 import os
 
 
 def create_stack(stack_name, key_name, region, client):
     print('Creating CloudFormation Stack...')
     dir_path = os.path.dirname(__file__)
-    template_path = os.path.join(dir_path, '../', 'templates/', 'JenkinsInstance.yaml')
+    template_path = os.path.join(dir_path, '../', 'cloudformation/', 'JenkinsInstance.yaml')
     template_body = ''
     with open(template_path, 'r') as f:
         template_body = f.read()
@@ -26,10 +27,10 @@ def create_stack(stack_name, key_name, region, client):
 
 def wait_until_stack_is_created(stack_name, client):
     status = client.describe_stacks(StackName=stack_name)['Stacks'][0]['StackStatus']
-    while status not in ['CREATE_FAILED', 'CREATE_COMPLETE']:
+    while status not in ['CREATE_FAILED', 'CREATE_COMPLETE', 'ROLLBACK_COMPLETE']:
         time.sleep(5)
         status = client.describe_stacks(StackName=stack_name)['Stacks'][0]['StackStatus']
-    if status == 'CREATE_FAILED':
+    if status == 'CREATE_FAILED' or status == 'ROLLBACK_COMPLETE':
         raise Exception('Stack Creation Failed')
     print('Stack created')
 
@@ -47,6 +48,23 @@ def create_hosts_file(host_name, private_key_path, host_ip):
         f.write(host_info)
 
 
+def create_taskcat_file(region):
+    dir_path = os.path.dirname(__file__)
+    taskcat_file_path = os.path.join(dir_path, '../', 'taskcat.yaml')
+    contents = {
+        'project': {
+            'name': 'AQSDataLate',
+            'regions': [region],
+            'tests': {
+                'creation-test': {
+                    'template': 'cloudformation/DataLake.yaml'
+                }
+            }
+        }
+    }
+    with open(taskcat_file_path, 'w') as f:
+        yaml.dump(contents, f)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -61,5 +79,6 @@ if __name__ == '__main__':
         create_stack(args.StackName, args.KeyName, args.Region, CloudFormation)
         wait_until_stack_is_created(args.StackName, CloudFormation)
         create_hosts_file('Jenkins', args.PrivateKeyFilePath, get_host_ip(args.StackName, CloudFormation))
+        create_taskcat_file(args.Region)
     except Exception as e:
         print(e)

@@ -1,3 +1,4 @@
 .vscode
 ansible/*.ini
 **/*.pem
+taskcat.yaml
