@@ -1,49 +1,27 @@
 Pipeline {
     agent any
-    environment {
-        STACK_NAME = 'DataLakeStack'
-        PREFIX = 'valentarmo'
-    }
     stages {
         stage('Test Stack') {
             steps {
-                echo 'Starting Tests...'
+                echo 'Starting Infrastructure Tests'
+                sh 'python scripts/create-taskcat-file.py --Region ${env.AWS_DEFAULT_REGION} --S3BucketPrefix ${env.AQS_S3_BUCKET_PREFIX}'
                 sh 'taskcat test run'
-                echo 'Finished Tests...'
+                echo 'Finished Infrastructure Tests'
             }
         }
-        stage('Create Or Update Stack') {
+        stage('Deploy') {
             when {
                 expression {
-                    currentBuild.result == null || currentBuild.result == 'SUCCESS'
-                }
+                    currentBuild.result == 'SUCCESS'
+                } 
             }
             steps {
-                echo 'Starting Stack Deployment...'
-                script {
-                    withAWS(profile: 'myProfile') {
-                        def outputs = cfnUpdate(stack: '${env.STACK_NAME}', file: 'templates/DataLake.yaml', params:['Prefix=${env.PREFIX}'])
-                        env.SCRIPTS_BUCKET_NAME = outputs['ScriptsBucketName']
-                        echo 'Output: ${outputs}'
-                    }
-                }
-                echo 'Finished Stack Deployment...'
-            }
-        }
-        stage('Upload ETL Script') {
-            when {
-                expression {
-                    currentBuild.result == null || currentBuild.result == 'SUCCESS'
-                }
-            }
-            steps {
-                echo 'Starting Script Uploading...'
-                script {
-                    withAWS(profile: 'myProfile') {
-                        s3Upload(file: 'scripts/AirQualityToColumnarFormatHourly.py', bucket:'${env.SCRIPTS_BUCKET_NAME}', path:'/')
-                    }
-                }
-                echo 'Finished Script Uploading...'
+                echo 'Starting Deployment'
+                sh 'pipenv install'
+                sh 'pipenv shell'
+                sh 'python scripts/deploy.py --StackName ${env.AQS_STACK_NAME} --Region ${evn.AWS_DEFAULT_REGION} --S3BucketPrefix ${env.AQS_S3_BUCKET_PREFIX}'
+                sh 'exit'
+                echo 'Finished Deployment'
             }
         }
     }

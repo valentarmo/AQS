@@ -1,90 +1,91 @@
-Description: >
-  Create a Data Lake with an automated ETL consisting of:
-      Three S3 Buckets,
-      A Glue Database,
-      Two Glue Crawlers,
-      A Glue Job,
-      A Firehose Delivery Stream,
-      A StepFunction,
-      A CloudWatch Event,
-      IAM Roles
+Description: Create a Data Lake with an automated ETL
+
 Parameters:
-  Prefix:
+  S3BucketPrefix:
     Description: A word to prefix names with. Aimed mainly to make bucket names unique.
     Type: String
     AllowedPattern: "[a-z]+"
     ConstraintDescription: Malformed input-parameter. Prefix must match the pattern [a-z]+
-    Default: valentarmo
+
 Resources:
   S3Raw:
     Type: "AWS::S3::Bucket"
     Properties:
-      BucketName: !Join ["-", [!Ref Prefix, air-quality-raw]]
+      BucketName: !Join ["-", [!Ref S3BucketPrefix, air-quality-raw]]
+
   S3Processed:
     Type: "AWS::S3::Bucket"
     Properties:
-      BucketName: !Join ["-", [!Ref Prefix, air-quality-processed]]
+      BucketName: !Join ["-", [!Ref S3BucketPrefix, air-quality-processed]]
+
   S3Athena:
     Type: "AWS::S3::Bucket"
     Properties:
-      BucketName: !Join ["-", [!Ref Prefix, air-quality-athena-output]]
+      BucketName: !Join ["-", [!Ref S3BucketPrefix, air-quality-athena-output]]
+
   S3Scripts:
     Type: "AWS::S3::Bucket"
     Properties:
-      BucketName: !Join ["-", [!Ref Prefix, air-quality-etl-scripts]]
+      BucketName: !Join ["-", [!Ref S3BucketPrefix, air-quality-etl-scripts]]
+
   GlueRawBucketCrawler:
     Type: "AWS::Glue::Crawler"
     Properties:
       DatabaseName: !Ref GlueDatabase
-      Name: !Join ["", [!Ref Prefix, AirQualityRawCrawler]]
+      Name: AQSRawDataCrawler
       Role: !GetAtt GlueRole.Arn
       Targets:
         S3Targets:
           - Path: !Ref S3Raw
+
   GlueProcessedBucketCrawler:
     Type: "AWS::Glue::Crawler"
     Properties:
       DatabaseName: !Ref GlueDatabase
-      Name: !Join ["", [!Ref Prefix, AirQualityProcessedCrawler]]
+      Name: AQSProcessedDataCrawler
       Role: !GetAtt GlueRole.Arn
       Targets:
         S3Targets:
           - Path: !Ref S3Processed
+
   GlueDatabase:
     Type: "AWS::Glue::Database"
     Properties:
       CatalogId: !Ref AWS::AccountId
       DatabaseInput:
-        Name: !Join ["-", [!Ref Prefix, air-quality]]
+        Name: aqs-glue-database
         Description: GlueCatalogDatabase
+
   GlueJob:
     Type: "AWS::Glue::Job"
     Properties:
       Command:
         Name: glueetl
         PythonVersion: '3'
-        ScriptLocation: !Join ["", [s3://, !Ref S3Scripts, /AirQualityToColumnarFormatHourly.py]]
-      Name: !Join ["", [!Ref Prefix, AirQualityTransformToParquet]]
+        ScriptLocation: !Join ["", [s3://, !Ref S3Scripts, /, AirQualityToColumnarFormatHourly.py]]
+      Name: AQSTransformToParquet
       DefaultArguments:
         "--source_database": !Ref GlueDatabase
-        "--source_table_name": !Join ["_", [!Ref Prefix, air_quality_processed]]
+        "--source_table_name": !Join ["_", [!Ref S3BucketPrefix, air_quality_raw]]
         "--data_target": !Join ["", [s3://, !Ref S3Processed, /]]
       Role: !GetAtt GlueRole.Arn
       Description: ETL
       GlueVersion: "2.0"
       MaxRetries: 0
+
   AthenaWorkGroup:
     Type: "AWS::Athena::WorkGroup"
     Properties:
-      Name: !Join ["", [!Ref Prefix, AirQualityWorkGroup]]
+      Name: AQSWorkGroup
       State: ENABLED
       WorkGroupConfiguration:
         ResultConfiguration:
           OutputLocation: !Join ["", [s3://, !Ref S3Athena]]
+
   FirehoseDeliveryStream:
     Type: "AWS::KinesisFirehose::DeliveryStream"
     Properties:
-      DeliveryStreamName: !Join ["", [!Ref Prefix, AirQualityDeliveryStream]]
+      DeliveryStreamName: AQSFirehoseDeliveryStream
       DeliveryStreamType: DirectPut
       S3DestinationConfiguration:
         BucketARN: !GetAtt S3Raw.Arn
@@ -94,18 +95,20 @@ Resources:
         BufferingHints:
           IntervalInSeconds: 60
           SizeInMBs: 1
+
   DeliveryStreamSSMParameter:
     Type: "AWS::SSM::Parameter"
     Properties:
       Description: Firehose Delivery Stream Name 
       Name: AQSDeliveryStreamName
       Type: String
-      Value: !Join ["", [!Ref Prefix, AirQualityDeliveryStream]]
+      Value: !Ref FirehoseDeliveryStream
+
   StepFunction:
     Type: "AWS::StepFunctions::StateMachine"
     Properties:
       RoleArn: !GetAtt StepFunctionRole.Arn
-      StateMachineName: !Join ["", [!Ref Prefix, AirQualityETLStateMachine]]
+      StateMachineName: AQSStateMachine
       DefinitionString:
         !Join
           - ' '
@@ -116,7 +119,7 @@ Resources:
             - '"Type": "Task",'
             - '"Resource": "arn:aws:states:::athena:startQueryExecution.sync",'
             - '"Parameters": {'
-            - !Join ['', ['"QueryString": "MSCK REPAIR TABLE ', !Ref GlueDatabase, '.', !Join ["_", [!Ref Prefix, air_quality_processed]], ';",']]
+            - !Join ['', ['"QueryString": "MSCK REPAIR TABLE ', !Ref GlueDatabase, '.', !Join ["_", [!Ref S3BucketPrefix, air_quality_processed]], ';",']]
             - '"WorkGroup": "primary",'
             - '"ResultConfiguration": {'
             - !Join ['', ['"OutputLocation": "', !Join ["", [s3://, !Ref S3Athena]], '"']]
@@ -136,7 +139,7 @@ Resources:
             - '"Type": "Task",'
             - '"Resource": "arn:aws:states:::athena:startQueryExecution.sync",'
             - '"Parameters": {'
-            - !Join ['', ['"QueryString": "MSCK REPAIR TABLE ', !Ref GlueDatabase, '.', !Join ["_", [!Ref Prefix, air_quality_raw]], ';",']]
+            - !Join ['', ['"QueryString": "MSCK REPAIR TABLE ', !Ref GlueDatabase, '.', !Join ["_", [!Ref S3BucketPrefix, air_quality_raw]], ';",']]
             - '"WorkGroup": "primary",'
             - '"ResultConfiguration": {'
             - !Join ['', ['"OutputLocation": "', !Join ["", [s3://, !Ref S3Athena]], '"']]
@@ -146,25 +149,29 @@ Resources:
             - '}'
             - '}'
             - '}'
+
   CloudWatchEvent:
     Type: "AWS::Events::Rule"
     Properties:
       Description: Run the ETL step function every hour
-      Name: !Join ["", [!Ref Prefix, AirQualityHourlyEventRule]]
+      Name: AQSHourlyEventRule
       RoleArn: !GetAtt EventsRole.Arn
       ScheduleExpression: cron(0 0/1 ? * * *)
       State: DISABLED
       Targets:
         - Arn: !GetAtt StepFunction.Arn
-          Id: !Join ["", [!Ref Prefix, AirQualityETLStepFunction]]
+          Id: !GetAtt StepFunction.Name
           RoleArn: !GetAtt EventsRole.Arn
           RetryPolicy:
             MaximumRetryAttempts: 1
             MaximumEventAgeInSeconds: 600
+
   GlueRole:
     Type: "AWS::IAM::Role"
     Properties:
       Path: "/"
+      RoleName: AQSGlueRole
+      ManagedPolicyArns: [ "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole" ]
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -174,10 +181,12 @@ Resources:
                 - glue.amazonaws.com
             Action:
               - "sts:AssumeRole"
+
   FirehoseRole:
     Type: "AWS::IAM::Role"
     Properties:
       Path: "/"
+      RoleName: AQSFirehoseRole
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -187,10 +196,12 @@ Resources:
                 - firehose.amazonaws.com
             Action:
               - "sts:AssumeRole"
+
   StepFunctionRole:
     Type: "AWS::IAM::Role"
     Properties:
       Path: "/"
+      RoleName: AQSStepFunctionRole
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -200,10 +211,12 @@ Resources:
                 - states.amazonaws.com
             Action:
               - "sts:AssumeRole"
+
   EventsRole:
     Type: "AWS::IAM::Role"
     Properties:
       Path: "/"
+      RoleName: AQSEventsRole
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -213,10 +226,11 @@ Resources:
                 - events.amazonaws.com
             Action:
               - "sts:AssumeRole"
-  GlueRolePolicy:
+
+  GluePolicy:
     Type: "AWS::IAM::Policy"
     Properties:
-      PolicyName: !Join ["", [!Ref Prefix, GlueRolePolicy]]
+      PolicyName: AQSGlueS3AccessPolicy
       Roles: [!Ref GlueRole]
       PolicyDocument:
         Version: "2012-10-17"
@@ -225,50 +239,19 @@ Resources:
             Action:
               - "s3:PutObject"
               - "s3:GetObject"
-              - "s3:ListAllMyBuckets"
-              - "s3:CreateBucket"
-              - "s3:ListBucket"
               - "s3:DeleteObject"
-              - "s3:DeleteBucket"
+              - "s3:ListAllMyBuckets"
+              - "s3:ListBucket"
               - "s3:GetBucketLocation"
               - "s3:GetBucketAcl"
             Resource: 
               - !GetAtt S3Raw.Arn
               - !GetAtt S3Processed.Arn
-          - Effect: Allow
-            Action:
-              - "glue:*"
-              - "ec2:DescribeVpcEndpoints"
-              - "ec2:DescribeRouteTables"
-              - "ec2:CreateNetworkInterface"
-              - "ec2:DeleteNetworkInterfaces"
-              - "ec2:DescribeNetworkInterfaces"
-              - "ec2:DescribeSecurityGroups"
-              - "ec2:DescribeSubnets"
-              - "ec2:DescribeVpcAttribute"
-              - "iam:ListRolePolicies"
-              - "iam:GetRole"
-              - "iam:GetRolePolicy"
-              - "cloudwatch:PutMetricData"
-            Resource: "*"
-          - Effect: Allow
-            Action:
-              - "logs:CreateLogGroup"
-              - "logs:CreateLogStream"
-              - "logs:PutLogEvents"
-            Resource: "arn:aws:logs:*:*:/aws-glue/*"
-          - Effect: Allow
-            Action:
-              - "ec2:CreateTags"
-              - "ec2:DeleteTags"
-            Resource:
-              - "arn:aws:ec2:*:*:network-interface/*"
-              - "arn:aws:ec2:*:*:security-group/*"
-              - "arn:aws:ec2:*:*:instance/*"
-  FirehoseRolePolicy:
+
+  FirehosePolicy:
     Type: "AWS::IAM::Policy"
     Properties:
-      PolicyName: !Join ["", [!Ref Prefix, FirehoseRolePolicy]]
+      PolicyName: AQSFirehosePolicy
       Roles: [!Ref FirehoseRole]
       PolicyDocument:
         Version: "2012-10-17"
@@ -293,10 +276,11 @@ Resources:
               - "Kinesis:GetRecords"
               - "Kinesis:ListShards"
             Resource: "*"
-  StepFunctionRolePolicy:
+
+  StepFunctionPolicy:
     Type: "AWS::IAM::Policy"
     Properties:
-      PolicyName: !Join ["", [!Ref Prefix, StepFunctionRolePolicy]]
+      PolicyName: AQSStepFunctionPolicy
       Roles: [!Ref StepFunctionRole]
       PolicyDocument:
         Version: "2012-10-17"
@@ -352,10 +336,11 @@ Resources:
             Action:
               - "lakeformation:GetDataAccess"
             Resource: "*"
-  EventsRolePolicy:
+
+  EventsPolicy:
     Type: "AWS::IAM::Policy"
     Properties:
-      PolicyName: !Join ["", [!Ref Prefix, EventsRolePolicy]]
+      PolicyName: AQSEventsPolicy
       Roles: [!Ref EventsRole]
       PolicyDocument:
         Version: "2012-10-17"
@@ -364,6 +349,7 @@ Resources:
             Action:
               - "states:StartExecution"
             Resource: !GetAtt StepFunction.Arn
+
 Outputs:
   ScriptsBucketName:
     Description: Scripts Bucket Name
