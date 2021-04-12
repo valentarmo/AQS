@@ -264,7 +264,9 @@ Resources:
               - "s3:ListBucket"
               - "s3:ListBucketMultipartUploads"
               - "s3:PutObject"
-            Resource: !GetAtt S3Raw.Arn
+            Resource: 
+              - !GetAtt S3Raw.Arn
+              - !Join ["", [!GetAtt S3Raw.Arn, "/*"]]
           - Effect: Allow
             Action:
               - "logs:PutLogEvents"
