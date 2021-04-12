@@ -7,31 +7,27 @@ import os
 from botocore.exceptions import ClientError
 
 
-def deploy_stack(stack_name, s3_bucket_prefix, client):
-    if stack_exists(stack_name, client):
-        update_stack(stack_name, s3_bucket_prefix, client)
-        wait_until_stack_is_updated(stack_name, client)
+def deploy_stack(stack_name, s3_bucket_prefix, cloudformation):
+    if stack_exists(stack_name, cloudformation):
+        update_stack(stack_name, s3_bucket_prefix, cloudformation)
+        wait_until_stack_is_updated(stack_name, cloudformation)
     else:
-        create_stack(stack_name, s3_bucket_prefix, client)
-        wait_until_stack_is_created(stack_name, client)
+        create_stack(stack_name, s3_bucket_prefix, cloudformation)
+        wait_until_stack_is_created(stack_name, cloudformation)
 
 
-def stack_exists(stack_name, client):
+def stack_exists(stack_name, cloudformation):
     try:
-        client.describe_stacks(StackName=stack_name)
+        cloudformation.describe_stacks(StackName=stack_name)
         return True
     except ClientError:
         return False
 
 
-def update_stack(stack_name, s3_bucket_prefix, client):
+def update_stack(stack_name, s3_bucket_prefix, cloudformation):
     print('Updating CloudFormation Stack')
-    dir_path = os.path.dirname(__file__)
-    template_path = os.path.join(dir_path, '../', 'cloudformation/', 'DataLake.yaml')
-    template_body = ''
-    with open(template_path, 'r') as f:
-        template_body = f.read()
-    response = client.update_stack(
+    template_body = get_cloudformation_template()
+    response = cloudformation.update_stack(
         StackName=stack_name,
         TemplateBody=template_body,
         Parameters=[
@@ -41,24 +37,20 @@ def update_stack(stack_name, s3_bucket_prefix, client):
     )
 
 
-def wait_until_stack_is_updated(stack_name, client):
-    status = client.describe_stacks(StackName=stack_name)['Stacks'][0]['StackStatus']
+def wait_until_stack_is_updated(stack_name, cloudformation):
+    status = cloudformation.describe_stacks(StackName=stack_name)['Stacks'][0]['StackStatus']
     while status not in ['UPDATE_FAILED', 'UPDATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE']:
         time.sleep(5)
-        status = client.describe_stacks(StackName=stack_name)['Stacks'][0]['StackStatus']
+        status = cloudformation.describe_stacks(StackName=stack_name)['Stacks'][0]['StackStatus']
     if status == 'UPDATE_CREATE_FAILED' or status == 'UPDATE_ROLLBACK_COMPLETE':
         raise Exception('Stack Update Failed')
     print('Stack Updated')
 
 
-def create_stack(stack_name, s3_bucket_prefix, client):
+def create_stack(stack_name, s3_bucket_prefix, cloudformation):
     print('Creating CloudFormation Stack')
-    dir_path = os.path.dirname(__file__)
-    template_path = os.path.join(dir_path, '../', 'cloudformation/', 'DataLake.yaml')
-    template_body = ''
-    with open(template_path, 'r') as f:
-        template_body = f.read()
-    response = client.create_stack(
+    template_body = get_cloudformation_template()
+    response = cloudformation.create_stack(
         StackName=stack_name,
         TemplateBody=template_body,
         Parameters=[
@@ -68,20 +60,29 @@ def create_stack(stack_name, s3_bucket_prefix, client):
     )
 
 
-def wait_until_stack_is_created(stack_name, client):
-    status = client.describe_stacks(StackName=stack_name)['Stacks'][0]['StackStatus']
+def wait_until_stack_is_created(stack_name, cloudformation):
+    status = cloudformation.describe_stacks(StackName=stack_name)['Stacks'][0]['StackStatus']
     while status not in ['CREATE_FAILED', 'CREATE_COMPLETE', 'ROLLBACK_COMPLETE']:
         time.sleep(5)
-        status = client.describe_stacks(StackName=stack_name)['Stacks'][0]['StackStatus']
+        status = cloudformation.describe_stacks(StackName=stack_name)['Stacks'][0]['StackStatus']
     if status == 'CREATE_FAILED' or status == 'ROLLBACK_COMPLETE':
         raise Exception('Stack Creation Failed')
     print('Stack created')
 
 
-def deploy_scripts(stack_name, client):
+def get_cloudformation_template():
+    dir_path = os.path.dirname(__file__)
+    template_path = os.path.join(dir_path, '../', 'cloudformation/', 'DataLake.yaml')
+    template_body = ''
+    with open(template_path, 'r') as f:
+        template_body = f.read()   
+    return template_body
+
+
+def deploy_scripts(stack_name, cloudformation):
     print('Deploying ETL scripts')
     s3 = boto3.client('s3')
-    bucket_name = get_scripts_bucket_name(stack_name, client)
+    bucket_name = get_scripts_bucket_name(stack_name, cloudformation)
     dir_path = os.path.dirname(__file__)
     scripts_home = os.path.join(dir_path, 'ETL')
     for script in os.listdir(scripts_home):
@@ -90,9 +91,9 @@ def deploy_scripts(stack_name, client):
     print('Scripts deployed')
 
 
-def get_scripts_bucket_name(stack_name, client):
+def get_scripts_bucket_name(stack_name, cloudformation):
     print('Getting Scripts Bucket Name')
-    response = client.describe_stacks(StackName=stack_name)
+    response = cloudformation.describe_stacks(StackName=stack_name)
     return response['Stacks'][0]['Outputs'][0]['OutputValue']
 
 
@@ -105,6 +106,7 @@ if __name__ == '__main__':
     CloudFormation = boto3.client('cloudformation')
     try:
         deploy_stack(args.StackName, args.S3BucketPrefix,  CloudFormation)
+        deploy_scripts(args.StackName, CloudFormation)
     except Exception as e:
         print(e)
         sys.exit(1)
