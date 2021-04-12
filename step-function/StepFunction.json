@@ -25,7 +25,7 @@
         "Type": "Task",
         "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
         "Parameters": {
-          "QueryString": "MSCK REPAIR TABLE <DATABASE_NAME>.<RAW_DATA_TABLE_NAME>;",
+          "QueryString": "MSCK REPAIR TABLE <DATABASE_NAME>.<PROCESSED_DATA_TABLE_NAME>;",
           "WorkGroup": "primary",
           "ResultConfiguration": {
             "OutputLocation": "<S3 PATH>"

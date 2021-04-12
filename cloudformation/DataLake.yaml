@@ -58,7 +58,7 @@ Resources:
     Properties:
       CatalogId: !Ref AWS::AccountId
       DatabaseInput:
-        Name: aqs-glue-database
+        Name: aqs_glue_database
         Description: GlueCatalogDatabase
 
   GlueJob:
@@ -125,7 +125,7 @@ Resources:
             - '"Type": "Task",'
             - '"Resource": "arn:aws:states:::athena:startQueryExecution.sync",'
             - '"Parameters": {'
-            - !Join ['', ['"QueryString": "MSCK REPAIR TABLE ', !Ref GlueDatabase, '.', !Join ["_", [!Ref S3BucketPrefix, air_quality_processed]], ';",']]
+            - !Join ['', ['"QueryString": "MSCK REPAIR TABLE ', !Ref GlueDatabase, '.', !Join ["_", [!Ref S3BucketPrefix, air_quality_raw]], ';",']]
             - '"WorkGroup": "primary",'
             - '"ResultConfiguration": {'
             - !Join ['', ['"OutputLocation": "', !Join ["", [s3://, !Ref S3Athena]], '"']]
@@ -145,7 +145,7 @@ Resources:
             - '"Type": "Task",'
             - '"Resource": "arn:aws:states:::athena:startQueryExecution.sync",'
             - '"Parameters": {'
-            - !Join ['', ['"QueryString": "MSCK REPAIR TABLE ', !Ref GlueDatabase, '.', !Join ["_", [!Ref S3BucketPrefix, air_quality_raw]], ';",']]
+            - !Join ['', ['"QueryString": "MSCK REPAIR TABLE ', !Ref GlueDatabase, '.', !Join ["_", [!Ref S3BucketPrefix, air_quality_processed]], ';",']]
             - '"WorkGroup": "primary",'
             - '"ResultConfiguration": {'
             - !Join ['', ['"OutputLocation": "', !Join ["", [s3://, !Ref S3Athena]], '"']]
