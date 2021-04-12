@@ -7,12 +7,12 @@ import os
 from botocore.exceptions import ClientError
 
 
-def deploy_stack(stack_name, region, client):
+def deploy_stack(stack_name, s3_bucket_prefix, client):
     if stack_exists(stack_name, client):
-        update_stack(stack_name, region, client)
+        update_stack(stack_name, s3_bucket_prefix, client)
         wait_until_stack_is_updated(stack_name, client)
     else:
-        create_stack(stack_name, region, client)
+        create_stack(stack_name, s3_bucket_prefix, client)
         wait_until_stack_is_created(stack_name, client)
 
 
@@ -24,7 +24,7 @@ def stack_exists(stack_name, client):
         return False
 
 
-def update_stack(stack_name, region, client):
+def update_stack(stack_name, s3_bucket_prefix, client):
     print('Updating CloudFormation Stack')
     dir_path = os.path.dirname(__file__)
     template_path = os.path.join(dir_path, '../', 'cloudformation/', 'DataLake.yaml')
@@ -35,7 +35,7 @@ def update_stack(stack_name, region, client):
         StackName=stack_name,
         TemplateBody=template_body,
         Parameters=[
-            {'ParameterKey': 'Region', 'ParameterValue': region}
+            {'ParameterKey': 'S3BucketPrefix', 'ParameterValue': s3_bucket_prefix}
         ],
         Capabilities=['CAPABILITY_NAMED_IAM']
     )
@@ -51,7 +51,7 @@ def wait_until_stack_is_updated(stack_name, client):
     print('Stack Updated')
 
 
-def create_stack(stack_name, region, client):
+def create_stack(stack_name, s3_bucket_prefix, client):
     print('Creating CloudFormation Stack')
     dir_path = os.path.dirname(__file__)
     template_path = os.path.join(dir_path, '../', 'cloudformation/', 'DataLake.yaml')
@@ -62,7 +62,7 @@ def create_stack(stack_name, region, client):
         StackName=stack_name,
         TemplateBody=template_body,
         Parameters=[
-            {'ParameterKey': 'Region', 'ParameterValue': region}
+            {'ParameterKey': 'S3BucketPrefix', 'ParameterValue': s3_bucket_prefix}
         ],
         Capabilities=['CAPABILITY_NAMED_IAM']
     )
@@ -99,13 +99,12 @@ def get_scripts_bucket_name(stack_name, client):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--StackName', required=True, help='Name of the Stack')
-    parser.add_argument('--Region', help='Region where to create the Stack', default='us-east-2', choices=['us-west-1', 'us-east-1', 'us-west-2', 'us-east-2'])
     parser.add_argument('--S3BucketPrefix', required=True, help='Prefix for S3 Buckets')
     args = parser.parse_args()
 
     CloudFormation = boto3.client('cloudformation')
     try:
-        deploy_stack(args.StackName, args.KeyName, args.Region, args.PrivateKeyS3Bucket, args.PrivateKeyS3FilePath, CloudFormation)
+        deploy_stack(args.StackName, args.S3BucketPrefix,  CloudFormation)
     except Exception as e:
         print(e)
         sys.exit(1)
