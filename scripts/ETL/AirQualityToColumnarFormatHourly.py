@@ -7,10 +7,7 @@ from awsglue.context import GlueContext
 from awsglue.job import Job
 
 ## @params: [JOB_NAME]
-args = getResolvedOptions(sys.argv, ['JOB_NAME',
-                                     'source_database'
-                                     'source_table_name',
-                                     'data_target'])
+args = getResolvedOptions(sys.argv, ['JOB_NAME', 'source_database', 'source_table_name', 'data_target'])
 
 DATABASE = args['source_database']
 SOURCE_TABLE = args['source_table_name']

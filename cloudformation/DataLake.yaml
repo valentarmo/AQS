@@ -8,6 +8,11 @@ Parameters:
     ConstraintDescription: Malformed input-parameter. Prefix must match the pattern [a-z]+
 
 Resources:
+  S3Glue:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: !Join ["-", [!Ref S3BucketPrefix, air-quality-glue]]   
+
   S3Raw:
     Type: "AWS::S3::Bucket"
     Properties:
@@ -65,6 +70,7 @@ Resources:
         ScriptLocation: !Join ["", [s3://, !Ref S3Scripts, /, AirQualityToColumnarFormatHourly.py]]
       Name: AQSTransformToParquet
       DefaultArguments:
+        "--TempDir": !Join ["", [s3://, !Ref S3Glue]]
         "--source_database": !Ref GlueDatabase
         "--source_table_name": !Join ["_", [!Ref S3BucketPrefix, air_quality_raw]]
         "--data_target": !Join ["", [s3://, !Ref S3Processed, /]]
@@ -242,11 +248,9 @@ Resources:
               - "s3:DeleteObject"
               - "s3:ListAllMyBuckets"
               - "s3:ListBucket"
-              - "s3:GetBucketLocation"
-              - "s3:GetBucketAcl"
-            Resource: 
-              - !GetAtt S3Raw.Arn
-              - !GetAtt S3Processed.Arn
+              - "s3:CreateBucket"
+              - "s3:DeleteBucket"
+            Resource: "*"
 
   FirehosePolicy:
     Type: "AWS::IAM::Policy"
