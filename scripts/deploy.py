@@ -79,6 +79,7 @@ def wait_until_stack_is_created(stack_name, client):
 
 
 def deploy_scripts(stack_name, client):
+    print('Deploying ETL scripts')
     s3 = boto3.client('s3')
     bucket_name = get_scripts_bucket_name(stack_name, client)
     dir_path = os.path.dirname(__file__)
@@ -86,9 +87,11 @@ def deploy_scripts(stack_name, client):
     for script in os.listdir(scripts_home):
         script_path = os.path.join(scripts_home, script)
         s3.upload_file(script_path, bucket_name, script)
+    print('Scripts deployed')
 
 
 def get_scripts_bucket_name(stack_name, client):
+    print('Getting Scripts Bucket Name')
     response = client.describe_stacks(StackName=stack_name)
     return response['Stacks'][0]['Outputs'][0]['OutputValue']
 
