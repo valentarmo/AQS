@@ -1,14 +1,13 @@
 {
-    "StartAt": "Load New Partitions Raw",
+    "StartAt": "Run Raw Crawler",
     "States": {
-      "Load New Partitions Raw": {
+      "Run Raw Crawler": {
         "Type": "Task",
-        "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
+        "Resource": "arn:aws:states:::lambda:invoke",
         "Parameters": {
-          "QueryString": "MSCK REPAIR TABLE <DATABASE_NAME>.<RAW_DATA_TABLE_NAME>;",
-          "WorkGroup": "primary",
-          "ResultConfiguration": {
-            "OutputLocation": "<S3 PATH>"
+          "FunctionName": "<Function Name>",
+          "Payload": {
+            "CrawlerName": "<Crawler Name>"
           }
         },
         "Next": "Start Glue Job"
@@ -19,16 +18,15 @@
         "Parameters": {
           "JobName": "AirQualityToColumnarFormatHourly"
         },
-        "Next": "Load New Partitions Columnar"
+        "Next": "Run Processed Crawler"
       },
-      "Load New Partitions Columnar": {
+      "Run Processed Crawler": {
         "Type": "Task",
-        "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
+        "Resource": "arn:aws:states:::lambda:invoke",
         "Parameters": {
-          "QueryString": "MSCK REPAIR TABLE <DATABASE_NAME>.<PROCESSED_DATA_TABLE_NAME>;",
-          "WorkGroup": "primary",
-          "ResultConfiguration": {
-            "OutputLocation": "<S3 PATH>"
+          "FunctionName": "<Function Name>",
+          "Payload": {
+            "CrawlerName": "<Crawler Name>"
           }
         },
         "End": true

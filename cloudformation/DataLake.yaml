@@ -2,7 +2,7 @@ Description: Create a Data Lake with an automated ETL
 
 Parameters:
   S3BucketPrefix:
-    Description: A word to prefix names with. Aimed mainly to make bucket names unique.
+    Description: A word to prefix bucket names with to make them unique.
     Type: String
     AllowedPattern: "[a-z]+"
     ConstraintDescription: Malformed input-parameter. Prefix must match the pattern [a-z]+
@@ -119,16 +119,15 @@ Resources:
         !Join
           - ' '
           - - '{'
-            - '"StartAt": "Load New Partitions Raw",'
+            - '"StartAt": "Run Raw Crawler",'
             - '"States": {'
-            - '"Load New Partitions Raw": {'
+            - '"Run Raw Crawler": {'
             - '"Type": "Task",'
-            - '"Resource": "arn:aws:states:::athena:startQueryExecution.sync",'
+            - '"Resource": "arn:aws:states:::lambda:invoke",'
             - '"Parameters": {'
-            - !Join ['', ['"QueryString": "MSCK REPAIR TABLE ', !Ref GlueDatabase, '.', !Join ["_", [!Ref S3BucketPrefix, air_quality_raw]], ';",']]
-            - '"WorkGroup": "primary",'
-            - '"ResultConfiguration": {'
-            - !Join ['', ['"OutputLocation": "', !Join ["", [s3://, !Ref S3Athena]], '"']]
+            - !Join ['', ['"FunctionName": "', !Ref RunCrawlerLambdaFunction, '",']]
+            - '"Payload": {'
+            - !Join ['', ['"CrawlerName": "', !Ref GlueRawBucketCrawler, '"']]
             - '}'
             - '},'
             - '"Next": "Start Glue Job"'
@@ -139,22 +138,37 @@ Resources:
             - '"Parameters": {'
             - !Join ['', ['"JobName": "', !Ref GlueJob, '"']]
             - '},'
-            - '"Next": "Load New Partitions Columnar"'
+            - '"Next": "Run Processed Crawler"'
             - '},'
-            - '"Load New Partitions Columnar": {'
+            - '"Run Processed Crawler": {'
             - '"Type": "Task",'
-            - '"Resource": "arn:aws:states:::athena:startQueryExecution.sync",'
+            - '"Resource": "arn:aws:states:::lambda:invoke",'
             - '"Parameters": {'
-            - !Join ['', ['"QueryString": "MSCK REPAIR TABLE ', !Ref GlueDatabase, '.', !Join ["_", [!Ref S3BucketPrefix, air_quality_processed]], ';",']]
-            - '"WorkGroup": "primary",'
-            - '"ResultConfiguration": {'
-            - !Join ['', ['"OutputLocation": "', !Join ["", [s3://, !Ref S3Athena]], '"']]
+            - !Join ['', ['"FunctionName": "', !Ref RunCrawlerLambdaFunction, '",']]
+            - '"Payload": {'
+            - !Join ['', ['"CrawlerName": "', !Ref GlueProcessedBucketCrawler, '"']]
             - '}'
             - '},'
             - '"End": true'
             - '}'
             - '}'
             - '}'
+
+  RunCrawlerLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Description: Start a Glue Crawler
+      FunctionName: AQSRunCrawlerFunction
+      Role: !GetAtt LambdaRole.Arn
+      PackageType: Zip
+      Runtime: python3.8
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          import boto3
+          def handler(event, context):
+            glue = boto3.client('glue')
+            glue.start_crawler(Name=event['CrawlerName'])
 
   CloudWatchEvent:
     Type: "AWS::Events::Rule"
@@ -177,7 +191,8 @@ Resources:
     Properties:
       Path: "/"
       RoleName: AQSGlueRole
-      ManagedPolicyArns: [ "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole" ]
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -187,6 +202,45 @@ Resources:
                 - glue.amazonaws.com
             Action:
               - "sts:AssumeRole"
+      Policies:
+        - PolicyName: AQSGlueS3AccessPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "s3:PutObject"
+                  - "s3:GetObject"
+                  - "s3:DeleteObject"
+                  - "s3:ListAllMyBuckets"
+                  - "s3:ListBucket"
+                  - "s3:CreateBucket"
+                  - "s3:DeleteBucket"
+                Resource: "*"
+
+  LambdaRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Path: "/"
+      RoleName: AQSLambdaRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: AQSStepFunctionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "glue:StartCrawler"
+                Resource: "*"
 
   FirehoseRole:
     Type: "AWS::IAM::Role"
@@ -202,12 +256,41 @@ Resources:
                 - firehose.amazonaws.com
             Action:
               - "sts:AssumeRole"
+      Policies:
+        - PolicyName: AQSFirehosePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "s3:AbortMultipartUpload"
+                  - "s3:GetBucketLocation"
+                  - "s3:GetObject"
+                  - "s3:ListBucket"
+                  - "s3:ListBucketMultipartUploads"
+                  - "s3:PutObject"
+                Resource: 
+                  - !GetAtt S3Raw.Arn
+                  - !Join ["", [!GetAtt S3Raw.Arn, "/*"]]
+              - Effect: Allow
+                Action:
+                  - "logs:PutLogEvents"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "Kinesis:DescribeStream"
+                  - "Kinesis:GetShardIterator"
+                  - "Kinesis:GetRecords"
+                  - "Kinesis:ListShards"
+                Resource: "*"
 
   StepFunctionRole:
     Type: "AWS::IAM::Role"
     Properties:
       Path: "/"
       RoleName: AQSStepFunctionRole
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaRole"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -217,6 +300,15 @@ Resources:
                 - states.amazonaws.com
             Action:
               - "sts:AssumeRole"
+      Policies:
+        - PolicyName: AQSStepFunctionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "glue:StartJobRun"
+                Resource: "*"
 
   EventsRole:
     Type: "AWS::IAM::Role"
@@ -232,129 +324,15 @@ Resources:
                 - events.amazonaws.com
             Action:
               - "sts:AssumeRole"
-
-  GluePolicy:
-    Type: "AWS::IAM::Policy"
-    Properties:
-      PolicyName: AQSGlueS3AccessPolicy
-      Roles: [!Ref GlueRole]
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Action:
-              - "s3:PutObject"
-              - "s3:GetObject"
-              - "s3:DeleteObject"
-              - "s3:ListAllMyBuckets"
-              - "s3:ListBucket"
-              - "s3:CreateBucket"
-              - "s3:DeleteBucket"
-            Resource: "*"
-
-  FirehosePolicy:
-    Type: "AWS::IAM::Policy"
-    Properties:
-      PolicyName: AQSFirehosePolicy
-      Roles: [!Ref FirehoseRole]
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Action:
-              - "s3:AbortMultipartUpload"
-              - "s3:GetBucketLocation"
-              - "s3:GetObject"
-              - "s3:ListBucket"
-              - "s3:ListBucketMultipartUploads"
-              - "s3:PutObject"
-            Resource: 
-              - !GetAtt S3Raw.Arn
-              - !Join ["", [!GetAtt S3Raw.Arn, "/*"]]
-          - Effect: Allow
-            Action:
-              - "logs:PutLogEvents"
-            Resource: "*"
-          - Effect: Allow
-            Action:
-              - "Kinesis:DescribeStream"
-              - "Kinesis:GetShardIterator"
-              - "Kinesis:GetRecords"
-              - "Kinesis:ListShards"
-            Resource: "*"
-
-  StepFunctionPolicy:
-    Type: "AWS::IAM::Policy"
-    Properties:
-      PolicyName: AQSStepFunctionPolicy
-      Roles: [!Ref StepFunctionRole]
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Action:
-              - "glue:StartJobRun"
-              - "glue:GetJobRun"
-              - "glue:GetJobRuns"
-              - "glue:BatchStopJobRun"
-            Resource: "*"
-          - Effect: Allow
-            Action:
-              - "athena:startQueryExecution"
-              - "athena:stopQueryExecution"
-              - "athena:getQueryExecution"
-              - "athena:getDataCatalog"
-            Resource: "*"
-          - Effect: Allow
-            Action:
-              - "s3:GetBucketLocation"
-              - "s3:GetObject"
-              - "s3:ListBucket"
-              - "s3:ListBucketMultipartUploads"
-              - "s3:ListMultipartUploadParts"
-              - "s3:AbortMultipartUpload"
-              - "s3:CreateBucket"
-              - "s3:PutObject"
-            Resource: 
-              - !GetAtt S3Processed.Arn
-              - !GetAtt S3Athena.Arn
-          - Effect: Allow
-            Action:
-              - "glue:CreateDatabase"
-              - "glue:GetDatabase"
-              - "glue:GetDatabases"
-              - "glue:UpdateDatabase"
-              - "glue:DeleteDatabase"
-              - "glue:CreateTable"
-              - "glue:UpdateTable"
-              - "glue:GetTable"
-              - "glue:GetTables"
-              - "glue:DeleteTable"
-              - "glue:BatchDeleteTable"
-              - "glue:BatchCreatePartition"
-              - "glue:CreatePartition"
-              - "glue:GetPartitions"
-              - "glue:BatchGetPartition"
-              - "glue:DeletePartition"
-              - "glue:BatchDeletePartition"
-            Resource: "*"
-          - Effect: Allow
-            Action:
-              - "lakeformation:GetDataAccess"
-            Resource: "*"
-
-  EventsPolicy:
-    Type: "AWS::IAM::Policy"
-    Properties:
-      PolicyName: AQSEventsPolicy
-      Roles: [!Ref EventsRole]
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Action:
-              - "states:StartExecution"
-            Resource: !GetAtt StepFunction.Arn
+      Policies:
+        - PolicyName: AQSEventsPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "states:StartExecution"
+                Resource: !GetAtt StepFunction.Arn
 
 Outputs:
   ScriptsBucketName:
