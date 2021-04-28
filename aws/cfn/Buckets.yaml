@@ -1,0 +1,226 @@
+Description: Create S3 AQS Buckets
+
+Parameters:
+  S3GlueBucketName:
+    Description: S3 bucket for glue
+    Type: String
+    MinLength: '3'
+    MaxLength: '63'
+    AllowedPattern: '[a-z0-9\.\-]*'
+    ConstraintDescription: Only lowercase letters, numbers, dots, and hyphens.
+
+  S3RawDataBucketName:
+    Description: S3 bucket for raw data
+    Type: String
+    MinLength: '3'
+    MaxLength: '63'
+    AllowedPattern: '[a-z0-9\.\-]*'
+    ConstraintDescription: Only lowercase letters, numbers, dots, and hyphens.
+
+  S3ProcessedDataBucketName:
+    Description: S3 bucket for processed data
+    Type: String
+    MinLength: '3'
+    MaxLength: '63'
+    AllowedPattern: '[a-z0-9\.\-]*'
+    ConstraintDescription: Only lowercase letters, numbers, dots, and hyphens.
+
+  S3AthenaBucketName:
+    Description: S3 bucket for athena
+    Type: String
+    MinLength: '3'
+    MaxLength: '63'
+    AllowedPattern: '[a-z0-9\.\-]*'
+    ConstraintDescription: Only lowercase letters, numbers, dots, and hyphens.
+
+  S3GlueScriptsBucketName:
+    Description: S3 bucket for glue scripts
+    Type: String
+    MinLength: '3'
+    MaxLength: '63'
+    AllowedPattern: '[a-z0-9\.\-]*'
+    ConstraintDescription: Only lowercase letters, numbers, dots, and hyphens.
+
+  S3TaskcatBucketName:
+    Description: S3 bucket for taskcat
+    Type: String
+    MinLength: '3'
+    MaxLength: '63'
+    AllowedPattern: '[a-z0-9\.\-]*'
+    ConstraintDescription: Only lowercase letters, numbers, dots, and hyphens.
+
+Outputs:
+  GlueBucketArn:
+    Description: Glue Bucket ARN
+    Value: !GetAtt S3Glue.Arn
+
+  RawBucketArn:
+    Description: Raw Bucket ARN
+    Value: !GetAtt S3Raw.Arn
+
+  ProcessedBucketArn:
+    Description: Processed Bucket ARN
+    Value: !GetAtt S3Processed.Arn
+
+  AthenaBucketArn:
+    Description: Athena Bucket ARN
+    Value: !GetAtt S3Athena.Arn
+
+  ScriptsBucketArn:
+    Description: Scripts Bucket ARN
+    Value: !GetAtt S3Scripts.Arn
+
+  TaskcatBucketArn:
+    Description: Taskcat Bucket ARN
+    Value: !GetAtt S3Taskcat.Arn
+
+  GlueBucketName:
+    Description: Glue Bucket Name
+    Value: !Ref S3Glue
+
+  RawBucketName:
+    Description: Raw Bucket Name
+    Value: !Ref S3Raw
+
+  ProcessedBucketName:
+    Description: Processed Bucket Name
+    Value: !Ref S3Processed
+
+  AthenaBucketName:
+    Description: Athena Bucket Name
+    Value: !Ref S3Athena
+
+  ScriptsBucketName:
+    Description: Scripts Bucket Name
+    Value: !Ref S3Scripts
+
+  TaskcatBucketName:
+    Description: Taskcat Bucket Name 
+    Value: !Ref S3Taskcat
+
+Resources:
+  S3Glue:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3GlueBucketName
+
+  S3Raw:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3RawDataBucketName
+
+  S3Processed:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3ProcessedDataBucketName
+
+  S3Athena:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3AthenaBucketName
+
+  S3Scripts:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3GlueScriptsBucketName
+
+  S3Taskcat:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3TaskcatBucketName
+
+  S3GlueNameSSMParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Description: Name of a S3 bucket for glue
+      Name: AQSS3GlueBucketName
+      Value: !Ref S3Glue
+
+  S3RawNameSSMParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Description: Name of a S3 bucket with raw data 
+      Name: AQSS3RawDataBucketName
+      Value: !Ref S3Raw
+
+  S3ProcessedNameSSMParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Description: Name of a S3 bucket with processed data
+      Name: AQSS3ProcessedDataBucketName
+      Value: !Ref S3Processed
+
+  S3AthenaNameSSMParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Description: Name of a S3 bucket for athena
+      Name: AQSS3AthenaBucketName
+      Value: !Ref S3Athena
+
+  S3GlueScriptsNameSSMParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Description: Name of a S3 bucket with glue scripts
+      Name: AQSS3GlueScriptsBucketName
+      Value: !Ref S3Scripts
+
+  S3TaskcatNameSSMParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Description: Name of a S3 bucket for taskcat
+      Name: AQSS3TaskcatBucketName
+      Value: !Ref S3Taskcat
+
+  S3GlueArnSSMParaarameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Description: ARN of a S3 bucket for glue
+      Name: AQSS3GlueBucketArn
+      Value: !GetAtt S3Glue.Arn
+
+  S3RawArnSSMParaarameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Description: ARN of a S3 bucket with raw data 
+      Name: AQSS3RawDataBucketArn
+      Value: !GetAtt S3Raw.Arn
+
+  S3ProcessedArnSSMParaarameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Description: ARN of a S3 bucket with processed data
+      Name: AQSS3ProcessedDataBucketArn
+      Value: !GetAtt S3Processed.Arn
+
+  S3AthenaArnSSMParaarameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Description: ARN of a S3 bucket for athena
+      Name: AQSS3AthenaBucketArn
+      Value: !GetAtt S3Athena.Arn
+
+  S3GlueScriptsArnSSMParaarameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Description: ARN of a S3 bucket with glue scripts
+      Name: AQSS3GlueScriptsBucketArn
+      Value: !GetAtt S3Scripts.Arn
+
+  S3TaskcatArnSSMParaarameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Description: ARN of a S3 bucket for taskcat
+      Name: AQSS3TaskcatBucketArn
+      Value: !GetAtt S3Taskcat.Arn

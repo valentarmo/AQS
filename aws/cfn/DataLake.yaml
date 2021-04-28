@@ -1,38 +1,51 @@
 Description: Create a Data Lake with an automated ETL
 
 Parameters:
-  S3BucketPrefix:
-    Description: A word to prefix bucket names with to make them unique.
+  S3GlueBucketName:
+    Description: S3 bucket for glue
     Type: String
-    AllowedPattern: "[a-z]+"
-    ConstraintDescription: Malformed input-parameter. Prefix must match the pattern [a-z]+
+    MinLength: '3'
+    MaxLength: '63'
+    AllowedPattern: '[a-z0-9\.\-]*'
+    ConstraintDescription: Only lowercase letters, numbers, dots, and hyphens.
+
+  S3RawDataBucketName:
+    Description: S3 bucket for raw data
+    Type: String
+    MinLength: '3'
+    MaxLength: '63'
+    AllowedPattern: '[a-z0-9\.\-]*'
+    ConstraintDescription: Only lowercase letters, numbers, dots, and hyphens.
+
+  S3ProcessedDataBucketName:
+    Description: S3 bucket for processed data
+    Type: String
+    MinLength: '3'
+    MaxLength: '63'
+    AllowedPattern: '[a-z0-9\.\-]*'
+    ConstraintDescription: Only lowercase letters, numbers, dots, and hyphens.
+
+  S3AthenaBucketName:
+    Description: S3 bucket for athena
+    Type: String
+    MinLength: '3'
+    MaxLength: '63'
+    AllowedPattern: '[a-z0-9\.\-]*'
+    ConstraintDescription: Only lowercase letters, numbers, dots, and hyphens.
+
+  S3GlueScriptsBucketName:
+    Description: S3 bucket for glue scripts
+    Type: String
+    MinLength: '3'
+    MaxLength: '63'
+    AllowedPattern: '[a-z0-9\.\-]*'
+    ConstraintDescription: Only lowercase letters, numbers, dots, and hyphens.
+
+  S3RawDataBucketArn:
+    Description: S3 Raw data Arn
+    Type: String
 
 Resources:
-  S3Glue:
-    Type: "AWS::S3::Bucket"
-    Properties:
-      BucketName: !Join ["-", [!Ref S3BucketPrefix, air-quality-glue]]   
-
-  S3Raw:
-    Type: "AWS::S3::Bucket"
-    Properties:
-      BucketName: !Join ["-", [!Ref S3BucketPrefix, air-quality-raw]]
-
-  S3Processed:
-    Type: "AWS::S3::Bucket"
-    Properties:
-      BucketName: !Join ["-", [!Ref S3BucketPrefix, air-quality-processed]]
-
-  S3Athena:
-    Type: "AWS::S3::Bucket"
-    Properties:
-      BucketName: !Join ["-", [!Ref S3BucketPrefix, air-quality-athena-output]]
-
-  S3Scripts:
-    Type: "AWS::S3::Bucket"
-    Properties:
-      BucketName: !Join ["-", [!Ref S3BucketPrefix, air-quality-etl-scripts]]
-
   GlueRawBucketCrawler:
     Type: "AWS::Glue::Crawler"
     Properties:
@@ -41,7 +54,7 @@ Resources:
       Role: !GetAtt GlueRole.Arn
       Targets:
         S3Targets:
-          - Path: !Ref S3Raw
+          - Path: !Ref S3RawDataBucketName
 
   GlueProcessedBucketCrawler:
     Type: "AWS::Glue::Crawler"
@@ -51,7 +64,7 @@ Resources:
       Role: !GetAtt GlueRole.Arn
       Targets:
         S3Targets:
-          - Path: !Ref S3Processed
+          - Path: !Ref S3ProcessedDataBucketName
 
   GlueDatabase:
     Type: "AWS::Glue::Database"
@@ -67,13 +80,13 @@ Resources:
       Command:
         Name: glueetl
         PythonVersion: '3'
-        ScriptLocation: !Join ["", [s3://, !Ref S3Scripts, /, AirQualityToColumnarFormatHourly.py]]
+        ScriptLocation: !Join ["", [s3://, !Ref S3GlueScriptsBucketName, /, AirQualityToColumnarFormatHourly.py]]
       Name: AQSTransformToParquet
       DefaultArguments:
-        "--TempDir": !Join ["", [s3://, !Ref S3Glue]]
+        "--TempDir": !Join ["", [s3://, !Ref S3GlueBucketName]]
         "--source_database": !Ref GlueDatabase
-        "--source_table_name": !Join ["_", [!Ref S3BucketPrefix, air_quality_raw]]
-        "--data_target": !Join ["", [s3://, !Ref S3Processed, /]]
+        "--source_table_name": !Join ["_", !Split ["-", !Ref S3RawDataBucketName]]
+        "--data_target": !Join ["", [s3://, !Ref S3ProcessedDataBucketName, /]]
       Role: !GetAtt GlueRole.Arn
       Description: ETL
       GlueVersion: "2.0"
@@ -86,7 +99,7 @@ Resources:
       State: ENABLED
       WorkGroupConfiguration:
         ResultConfiguration:
-          OutputLocation: !Join ["", [s3://, !Ref S3Athena]]
+          OutputLocation: !Join ["", [s3://, !Ref S3AthenaBucketName]]
 
   FirehoseDeliveryStream:
     Type: "AWS::KinesisFirehose::DeliveryStream"
@@ -94,7 +107,7 @@ Resources:
       DeliveryStreamName: AQSFirehoseDeliveryStream
       DeliveryStreamType: DirectPut
       S3DestinationConfiguration:
-        BucketARN: !GetAtt S3Raw.Arn
+        BucketARN: !Ref S3RawDataBucketArn
         ErrorOutputPrefix: error=!{firehose:error-output-type}/!{timestamp:yyyy/MM/dd}
         Prefix: year=!{timestamp:YYYY}/month=!{timestamp:M}/day=!{timestamp:d}/hour=!{timestamp:H}/
         RoleARN: !GetAtt FirehoseRole.Arn
@@ -270,8 +283,8 @@ Resources:
                   - "s3:ListBucketMultipartUploads"
                   - "s3:PutObject"
                 Resource: 
-                  - !GetAtt S3Raw.Arn
-                  - !Join ["", [!GetAtt S3Raw.Arn, "/*"]]
+                  - !Ref S3RawDataBucketArn
+                  - !Join ["", [!Ref S3RawDataBucketArn, "/*"]]
               - Effect: Allow
                 Action:
                   - "logs:PutLogEvents"
@@ -333,8 +346,3 @@ Resources:
                 Action:
                   - "states:StartExecution"
                 Resource: !GetAtt StepFunction.Arn
-
-Outputs:
-  ScriptsBucketName:
-    Description: Scripts Bucket Name
-    Value: !Ref S3Scripts
