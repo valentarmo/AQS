@@ -46,7 +46,13 @@ if __name__ == '__main__':
 
     try:
         s3_raw_data_bucket_arn = common.get_ssm_parameter_value('AQSS3RawDataBucketArn')
-        deploy_stack(args.StackName)
+        deploy_stack(args.StackName,
+                     args.S3GlueBucketName,
+                     args.S3RawDataBucketName,
+                     args.S3ProcessedDataBucketName,
+                     args.S3AthenaBucketName,
+                     args.S3GlueScriptsBucketName,
+                     s3_raw_data_bucket_arn)
         deploy_scripts()
     except Exception as e:
         print(e)

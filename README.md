@@ -6,12 +6,29 @@ Data can be simulated using [AQS-Generators](https://github.com/valentarmo/AQS-G
 ## Overview
 ![Overview](img/overview.png)
 
+## Buckets
+Due to how buckets work its better to create beforehand.
+
+    $ python scripts/deploy-buckets.py \
+        --StackName <Name for the Stack> \
+        --S3GlueBucketName <S3 Bucket Name> \
+        --S3RawDataBucketName <S3 Bucket Name> \
+        --S3ProcessedDataBucketName <S3 Bucket Name> \
+        --S3AthenaBucketName <S3 Bucket Name> \
+        --S3GlueScriptsBucketName <S3 Bucket Name> \
+        --S3TaskcatBucketName <S3 Bucket Name>
+
 ## Infrastructure Testing
 The CloudFormation stack can be tested using taskcat. To do it, an appropriate `.taskcat.yml` file can be generated using `scripts/create-taskcat-file.py`. It will generate the `.taskcat.yml` file in the project's root folder.
 
     $ python scripts/create-taskcat-file.py \
         --Region <AWS Region> \
-        --S3BucketPrefix <Prefix for S3 Buckets>
+        --S3GlueBucketName <S3 Bucket Name> \
+        --S3RawDataBucketName <S3 Bucket Name> \
+        --S3ProcessedDataBucketName <S3 Bucket Name> \
+        --S3AthenaBucketName <S3 Bucket Name> \
+        --S3GlueScriptsBucketName <S3 Bucket Name> \
+        --S3TaskcatBucketName <S3 Bucket Name>
     $ taskcat test run
 
 ## Deployment
@@ -19,4 +36,8 @@ The deployment is performed using CloudFormation and python scripts.
 
     $ python scripts/deploy.py \
         --StackName <Name for the Stack> \
-        --S3BucketPrefix <Prefix for S3 Buckets>
+        --S3GlueBucketName <S3 Bucket Name> \
+        --S3RawDataBucketName <S3 Bucket Name> \
+        --S3ProcessedDataBucketName <S3 Bucket Name> \
+        --S3AthenaBucketName <S3 Bucket Name> \
+        --S3GlueScriptsBucketName <S3 Bucket Name>
